@@ -1,8 +1,10 @@
 [package]
 name = "zonebuilder"
 version = "0.1.0"
-authors = ["Robin Lovelace <rob00x@gmail.com>"]
+authors = ["Robin Lovelace"]
 edition = "2018"
+description = "A Rust crate for building zones"
+license = "MIT"
 
 [dependencies]
 geo = { version = "0.17.1", features=["use-serde"] }

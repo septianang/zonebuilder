@@ -2,11 +2,9 @@ use geo::{map_coords::MapCoordsInplace, LineString, Point, Polygon};
 use geojson::GeoJson;
 use std::convert::TryInto;
 use std::{default::Default, iter::FromIterator};
-
-// use std::path::PathBuf;
 use structopt::StructOpt;
 
-/// Build zones
+/// Parameters for building zones
 #[derive(StructOpt, Debug)]
 #[structopt(name = "zb")]
 pub struct Params {
@@ -56,6 +54,7 @@ pub struct Params {
 // // https://doc.rust-lang.org/std/default/trait.Default.html
 
 impl Default for Params {
+    /// Creates a default set of parameters for zone building
     fn default() -> Self {
         // default: triangular number sequence
         Params {
@@ -68,17 +67,33 @@ impl Default for Params {
     }
 }
 
+/// Rounds the coordinates of a polygon to a specified precision
 fn round(poly: &mut Polygon<f64>, precision: usize) {
-    let p = 10_usize.pow(precision.try_into().unwrap()) as f64;
+    let p = match 10_usize.checked_pow(precision.try_into().unwrap_or(0)) {
+        Some(val) => val as f64,
+        None => {
+            eprintln!("Warning: Precision value too large, using default precision of 6");
+            1_000_000.0
+        }
+    };
     poly.map_coords_inplace(|&(x, y)| (f64::trunc(x * p) / p, f64::trunc(y * p) / p))
 }
 
+/// Generates a clock-like zoning system
+///
+/// # Arguments
+///
+/// * `centerpoint` - The center point of the zoning system
+/// * `params` - Parameters for building the zones
+///
+/// # Returns
+///
+/// A GeoJson object representing the generated zones
 pub fn clockboard(
     centerpoint: Point<f64>,
     params: Params,
-    //boundary: Option<Polygon<f64>>,
 ) -> GeoJson {
-    let mut polygons = Vec::new();
+    let mut polygons = Vec::with_capacity(params.distances.len() * params.num_segments);
     let mut irad_inner: f64;
     if params.num_segments == 1 {
         for i in params.distances {
@@ -132,6 +147,17 @@ pub fn clockboard(
     GeoJson::from(fc)
 }
 
+/// Creates a circular polygon
+///
+/// # Arguments
+///
+/// * `centerpoint` - The center point of the circle
+/// * `radius` - The radius of the circle
+/// * `num_vertices` - The number of vertices to use for the circle approximation
+///
+/// # Returns
+///
+/// A Polygon representing the circle
 fn makecircle(centerpoint: Point<f64>, radius: f64, num_vertices: usize) -> Polygon<f64> {
     let mut circle_points = Vec::new();
     for i in 0..num_vertices {
@@ -143,7 +169,20 @@ fn makecircle(centerpoint: Point<f64>, radius: f64, num_vertices: usize) -> Poly
     Polygon::new(LineString::from(circle_points), vec![])
 }
 
-// Make a single clock polygon
+/// Creates a single clock-like polygon segment
+///
+/// # Arguments
+///
+/// * `centerpoint` - The center point of the clock
+/// * `radius_outer` - The outer radius of the segment
+/// * `radius_inner` - The inner radius of the segment
+/// * `num_vertices_arc` - The number of vertices to use for each arc
+/// * `num_segments` - The total number of segments in the clock
+/// * `seg` - The index of this segment
+///
+/// # Returns
+///
+/// A Polygon representing the clock segment
 fn clockpoly(
     centerpoint: Point<f64>,
     radius_outer: f64,
