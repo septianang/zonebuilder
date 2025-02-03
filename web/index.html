@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+
+<head>
+	<meta charset="utf-8" />
+	<title>Zone Builder demo</title>
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+		integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+		crossorigin="" />
+	<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+		integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+		crossorigin=""></script>
+	<link rel="stylesheet" href="https://unpkg.com/leaflet-geosearch@3.3.1/dist/geosearch.css" />
+	<script src="https://unpkg.com/leaflet-geosearch@3.3.1/dist/geosearch.umd.js"></script>
+	<style>
+		body {
+			margin: 0px;
+			border: 0px;
+			padding: 0px;
+		}
+
+		#map {
+			height: 80%;
+			width: 80%;
+			position: absolute;
+		}
+	</style>
+</head>
+
+<body>
+	<h1><a href="https://zonebuilders.github.io/zonebuilder/articles/paper.html" target="_blank">ClockBoard zone
+			generator</a></h1>
+	<span id="num_circles_value"></span> Circles: <input type="range" min="1" max="10" value="5" id="num_circles"
+		oninput="window.regenerate();">
+	<span id="num_segments_value"></span> Segments: <input type="range" min="1" max="23" value="12" id="num_segments"
+		oninput="window.regenerate();">
+	<button type="button" onclick="window.download();">Download GeoJSON</button><br />
+	<div id="map"></div>
+	<script type="module">
+		import init, { generate_triangular_sequence, make_clockboard } from "./pkg/zonebuilder.js";
+
+		async function setup() {
+			// Initialize the WASM function.
+			await init();
+
+			// Create the Leaflet map
+			var map = L.map('map');
+			map.setView([30.27, -97.74], 13);
+			L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw', {
+				maxZoom: 18,
+				attribution: 'OpenStreetMap & MapBox',
+				id: 'mapbox/streets-v11',
+				tileSize: 512,
+				zoomOffset: -1
+			}).addTo(map);
+
+			// Add an optional raster layer for population
+			var worldpop = L.tileLayer('https://ogc.worldpop.org/geoserver/gwc/service/tms/1.0.0/wpGlobal%3Appp_2020@EPSG%3A900913@png/{z}/{x}/{-y}.png', {
+				tms: true,
+				opacity: 0.5,
+				maxNativeZoom: 11
+			});
+			L.control.layers(null, { "<a href='https://www.worldpop.org' target='_blank' title='Only available when zoomed out'>WorldPop 2020</a>": worldpop }, { collapsed: false }).addTo(map);
+
+			// Create a draggable marker representing the clockboard's center.
+			var marker = L.marker([30.2711286, -97.7436995], {
+				draggable: true,
+				autoPan: true
+			});
+			marker.addTo(map);
+			marker.on('move', regenerate);
+
+			// When you click on the map, re-center the marker there.
+			function recenter(e) {
+				marker.setLatLng(e.latlng);
+			}
+			map.on('click', recenter);
+
+			// Add a search bar
+			new GeoSearch.GeoSearchControl({
+				provider: new GeoSearch.OpenStreetMapProvider(),
+				showMarker: false,
+				autoClose: true
+			}).addTo(map);
+			map.on('geosearch/showlocation', searchFinished);
+			function searchFinished(ev) {
+				// Note the order of coordinates
+				marker.setLatLng([ev.location.y, ev.location.x]);
+			}
+
+			// Create an empty GeoJSON layer
+			var clockboard = L.geoJSON().addTo(map);
+
+			function labelZones(feature, layer) {
+				layer.bindTooltip(feature.properties.label);
+			}
+
+			function regenerate() {
+				// First clear the old layer
+				clockboard.remove();
+
+				var num_segments = parseInt(document.getElementById('num_segments').value);
+				var num_circles = parseInt(document.getElementById('num_circles').value);
+				var distances = generate_triangular_sequence(num_circles);
+				var rawJson = JSON.parse(make_clockboard(marker.getLatLng().lat, marker.getLatLng().lng, distances, num_segments));
+				clockboard = L.geoJSON(rawJson, { onEachFeature: labelZones }).addTo(map);
+
+				// Also update sliders
+				document.getElementById('num_circles_value').innerHTML = num_circles;
+				document.getElementById('num_segments_value').innerHTML = num_segments;
+			}
+
+			function download() {
+				var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(clockboard.toGeoJSON()));
+				var node = document.createElement('a');
+				node.setAttribute("href", dataStr);
+				node.setAttribute("download", 'clockboard.geojson');
+				document.body.appendChild(node);
+				node.click();
+				node.remove();
+			}
+
+			// To call regenerate() in the onclick handler, we have to make the function visible.
+			// According to https://stackoverflow.com/questions/53630310/use-functions-defined-in-es6-module-directly-in-html,
+			// this is how you do it.
+			window.regenerate = regenerate;
+			window.download = download;
+
+			// Create the initial clockboard.
+			regenerate();
+		}
+
+		setup();
+	</script>
+</body>
+
+</html>
